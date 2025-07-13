@@ -28,15 +28,15 @@ AI Pilot Assistance System은 인공지능 기반의 항공기 조종 보조 시
 |-----------------|-----------------------------------------|
 | 🐍 프로그래밍 언어  | Python                                 |
 | 🌐 웹 프레임워크   | Flask                                  |
-| 🗄️ 데이터베이스    | MySQL (예정)                           |
 | 🗺️ 지도 시각화     | Folium                                |
-| 🤖 AI/ML           | TensorFlow, scikit-learn (예정)        |
+| 🤖 AI/ML           | 상용 모델 활용 (Gemini CLI), MCP        |
 | 🤝 협업 도구       | GitHub, Notion                         |
 
 ---
 
 ## 📁 프로젝트 구조
 
+```
 /airmap-project
 ├── app.py # Flask 앱 실행 파일
 ├── web/
@@ -46,6 +46,7 @@ AI Pilot Assistance System은 인공지능 기반의 항공기 조종 보조 시
 ├── models/ # AI 모델 저장소
 ├── docs/ # 문서 및 참고자료
 └── README.md # 프로젝트 설명 파일
+```
 
 ---
 
