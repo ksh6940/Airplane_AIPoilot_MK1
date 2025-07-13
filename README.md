@@ -38,13 +38,15 @@ AI Pilot Assistance System은 인공지능 기반의 항공기 조종 보조 시
 
 ```
 /airmap-project
-├── app.py # Flask 앱 실행 파일
+├── server.py # flask 서버
+├── mapping.py # 지도 생성 
 ├── web/
-│ ├── map.html # 지도 UI
-│ └── static/ # 정적 파일 (CSS, JS)
+│ ├── main.html # 서비스 
+│ ├── map.html # 지도
+│ └── source/ # 이미지
 ├── data/ # 비행 데이터 및 로그
-├── models/ # AI 모델 저장소
-├── docs/ # 문서 및 참고자료
+│ ├── content/ # 데이터 
+│ └── dataGether.py # 크롤링
 └── README.md # 프로젝트 설명 파일
 ```
 
