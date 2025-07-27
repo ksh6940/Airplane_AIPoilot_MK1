@@ -3,7 +3,6 @@ import folium
 import re
 import os
 import navigation
-from navigation import is_blocked
 
 # 경로 설정
 content_dir = os.path.join(os.getcwd(), 'data', 'content')
@@ -51,8 +50,12 @@ map_state = {
     'map_type': 'normal',
     'filter_types': initial_filter_types,
     'location': default_location,
-    'markers': []
+    'markers': [],
+    'route': []
 }
+
+def get_state():
+    return map_state
 
 # DMS 좌표 → 십진수 변환 함수
 def dms_to_decimal(dms):
@@ -206,6 +209,14 @@ def clear_all_markers():
     m.save(map_path)
     print("✅ 마커 초기화 및 저장 완료")
 
+def clear_route():
+    print("💣 경로 초기화 중...")
+    map_state['route'] = []
+    map_state['markers'] = []
+    m = create_base_map()
+    m.save(map_path)
+    print("✅ 경로 초기화 및 저장 완료")
+
 # 두 지점 간의 거리를 기반으로 줌 레벨을 계산하는 함수 (Haversine 공식 근사치)
 def get_zoom_level(lat1, lon1, lat2, lon2):
     # 위도 및 경도 차이 계산
@@ -242,70 +253,84 @@ def add_route(start_location, end_location, place_names):
     start_lat, start_lon = start_location
     end_lat, end_lon = end_location
 
-    # 금지 구역 폴리곤 리스트 생성 (최소 3개 좌표 이상인 것만)
-    forbidden_polygons = []
-    for _, row in df_polygons.iterrows():
-        if row['type'] in FORBIDDEN_AIRSPACE_TYPES:
-            poly = parse_polygon_pos(row['pos'])
-            if len(poly) >= 3:
-                forbidden_polygons.append(poly)
+    # 금지구역 체크 제외, 단순 A* 탐색
+    path = navigation.get_route(start_location, end_location)
 
-    # 금지구역 차단 함수 (navigation 모듈에서 import된 함수)
-    # is_blocked(point, forbidden_polygons) 형태로 구현되어 있어야 함
+    if path and isinstance(path[0], tuple):
+        path = [[lat, lon] for lat, lon in path]  # 좌표 순서가 (lat, lon)로 정리
 
-    # 금지구역 회피 경로 탐색 (최단 경로)
-    path = navigation.astar(start_location, end_location, forbidden_polygons, is_blocked)
+    print("🚧 A* 경로:", path)
+    if not path:
+        print("❌ A* 탐색 실패: 경로 없음")
 
-    # 거리 및 시간 계산
     distance = navigation.calculate_path_length(path) if path else None
-    travel_time = navigation.estimate_travel_time(distance) if distance else None
+    travel_time = navigation.estimate_travel_time(distance) if distance is not None else None
 
-    # 출발지 마커 팝업 내용
+    # 경로 분석: 경로가 금지구역을 지나면 일괄 주의 메시지
+    alerts = []
+    if path:
+        for point in path:
+            is_forbidden, forbidden_details = is_location_forbidden(point[0], point[1])
+            if is_forbidden:
+                for zone in forbidden_details:
+                    if zone not in alerts:
+                        alerts.append(zone)
+
+    # 팝업 생성: distance, travel_time, 경로 분석 결과 포함
+    analysis_html = ""
+    if alerts:
+        analysis_html = "<div style='margin-top:8px; color:#c00; font-size:13px;'><b>경로 분석:</b><ul style='margin:4px 0 0 12px; padding:0;'>"
+        analysis_html += "<li>경로가 지도 내 비행 금지/제한/경고/군작전 구역을 지나갑니다. 경로를 수정하거나 해당 구역에 주의하세요.</li>"
+        analysis_html += "</ul></div>"
+
     start_popup = f"""
-    <div style="font-family: 'SeoulAlrimTTF-Heavy', sans-serif; padding: 15px; width: 280px; color: #000; background-color: #ffffff; border-radius: 8px;">
-        <h4 style="margin: 0 0 10px 0; font-size: 18px; color: #000;">
-            🛫 출발지
-        </h4>
-        <p><strong>이름:</strong> {start_place_name}</p>
-        <p>위치: {start_lat:.6f}, {start_lon:.6f}</p>
+    <div style="font-family: 'SeoulAlrimTTF-Heavy', sans-serif; padding:15px; width:280px; color:#333;">
+        <h4 style="margin:0 0 10px 0; font-size:18px; color:#1e90ff;">🛫 출발지</h4>
+        <p style="margin:5px 0; font-size:14px;"><b>장소명:</b> {start_place_name}</p>
+        <p style="margin:5px 0; font-size:14px;"><b>위치:</b> {start_lat:.6f}, {start_lon:.6f}</p>
     </div>
     """
 
-    # 도착지 마커 팝업 내용
     end_popup = f"""
-    <div style="font-family: 'SeoulAlrimTTF-Heavy', sans-serif; padding: 15px; width: 280px; color: #000; background-color: #ffffff; border-radius: 8px;">
-        <h4 style="margin: 0 0 10px 0; font-size: 18px; color: #000;">
-            🛬 도착지
-        </h4>
-        <p><strong>이름:</strong> {end_place_name}</p>
-        <p>위치: {end_lat:.6f}, {end_lon:.6f}</p>
-        {f"<p><b>거리:</b> {distance:.2f} km</p>" if distance else ""}
-        {f"<p><b>예상 소요 시간:</b> {travel_time}</p>" if travel_time else ""}
+    <div style="font-family: 'SeoulAlrimTTF-Heavy', sans-serif; padding:15px; width:280px; color:#333;">
+        <h4 style="margin:0 0 10px 0; font-size:18px; color:#800080;">🛬 도착지</h4>
+        <p style="margin:5px 0; font-size:14px;"><b>장소명:</b> {end_place_name}</p>
+        <p style="margin:5px 0; font-size:14px;"><b>위치:</b> {end_lat:.6f}, {end_lon:.6f}</p>
+        {f"<p style='margin:5px 0; font-size:14px;'><b>거리:</b> {distance:.2f} km</p>" if distance is not None else ""}
+        {f"<p style='margin:5px 0; font-size:14px;'><b>예상 시간:</b> {travel_time}</p>" if travel_time is not None else ""}
+        {analysis_html}
     </div>
     """
 
-    # 마커 리스트에 추가
     map_state['markers'].append([start_lat, start_lon, start_popup, "출발지"])
     map_state['markers'].append([end_lat, end_lon, end_popup, "도착지"])
 
-    # 지도 중심과 줌 레벨 계산
     center_lat = (start_lat + end_lat) / 2
     center_lon = (start_lon + end_lon) / 2
     map_state['location'] = [center_lat, center_lon]
     map_state['zoom'] = get_zoom_level(start_lat, start_lon, end_lat, end_lon)
+    map_state['route'] = path if path else []
 
-    # 기본 지도 생성
     m = create_base_map()
 
-    # 경로 폴리라인 그리기 (녹색)
     if path:
-        folium.PolyLine(locations=path, color='green', weight=5, opacity=0.7, tooltip='금지구역 회피 경로').add_to(m)
+        folium.PolyLine(locations=path, color='green', weight=5, opacity=0.7).add_to(m)
     else:
-        print("⚠️ 경로를 찾을 수 없습니다. 금지구역 때문에 경로가 차단되었을 수 있습니다.")
+        print("⚠️ 경로를 찾을 수 없습니다. 노드 밀도 또는 범위 부족일 수 있습니다.")
 
     m.save(map_path)
     print("✅ 경로 마커 및 지도 저장 완료")
 
+    return {
+        "start_point": start_place_name,
+        "end_point": end_place_name,
+        "estimated_time": travel_time,
+        "total_distance": f"{distance:.2f} km" if distance is not None else "N/A",
+        "analysis": {
+            "warnings": ["경로가 지도 내 비행 금지/제한/경고/군작전 구역을 지나갑니다. 경로를 수정하거나 해당 구역에 주의하세요."] if alerts else []
+        },
+        "analysis_html": analysis_html
+    }
 
 # 공역 좌표 데이터 로드
 df = pd.read_csv(os.path.join(content_dir, 'airspace_data.csv'))

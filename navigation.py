@@ -1,22 +1,5 @@
-# navigation.py
 from queue import PriorityQueue
 import math
-from shapely.geometry import Point, Polygon
-
-def is_blocked(point, forbidden_polygons):
-    """
-    point: (lat, lon) 튜플
-    forbidden_polygons: 폴리곤 리스트 (각각은 [(lat1, lon1), (lat2, lon2), ...])
-    
-    점이 금지 구역(폴리곤) 안에 있으면 True 반환
-    """
-    p = Point(point[0], point[1])
-    for poly_coords in forbidden_polygons:
-        poly = Polygon(poly_coords)
-        if poly.contains(p):
-            return True
-    return False
-
 
 def haversine_distance(a, b):
     lat1, lon1 = a
@@ -24,19 +7,15 @@ def haversine_distance(a, b):
     R = 6371  # 지구 반지름 (km)
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    aa = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(aa), math.sqrt(1-aa))
 
-def is_in_polygon(point, polygon):
-    return Polygon(polygon).contains(Point(point))
+# 목표 지점 근접 여부 판단 함수 (20m 이내 허용)
+def is_goal(current, end, threshold_m=20):
+    dist_km = haversine_distance(current, end)
+    return dist_km * 1000 <= threshold_m  # m 단위 변환 후 비교
 
-def is_blocked(point, forbidden_polygons):
-    for poly in forbidden_polygons:
-        if is_in_polygon(point, poly):
-            return True
-    return False
-
-def astar(start, end, forbidden_polygons, is_blocked_func):
+def get_route(start, end):
     open_set = PriorityQueue()
     open_set.put((0, start))
     came_from = {}
@@ -45,8 +24,8 @@ def astar(start, end, forbidden_polygons, is_blocked_func):
     while not open_set.empty():
         _, current = open_set.get()
         
-        if current == end:
-            # 경로 복원
+        # 도착 조건: 일정 거리 이내 도달하면 성공
+        if is_goal(current, end):
             path = []
             while current in came_from:
                 path.append(current)
@@ -55,14 +34,13 @@ def astar(start, end, forbidden_polygons, is_blocked_func):
             path.reverse()
             return path
         
-        # 8방향 인접 노드 탐색 (0.001도 단위 - 약 100m 근접)
-        for dx in [-0.001, 0, 0.001]:
-            for dy in [-0.001, 0, 0.001]:
+        step = 0.0005  # 노드 간격 (약 50m 내외)
+
+        for dx in [-step, 0, step]:
+            for dy in [-step, 0, step]:
                 if dx == 0 and dy == 0:
                     continue
                 neighbor = (round(current[0] + dx, 6), round(current[1] + dy, 6))
-                if is_blocked_func(neighbor, forbidden_polygons):
-                    continue
                 
                 tentative_g = g_score[current] + haversine_distance(current, neighbor)
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
@@ -90,3 +68,4 @@ def estimate_travel_time(distance_km, speed_kmh=50):
         return f"{h}시간 {m}분"
     else:
         return f"{m}분"
+        
